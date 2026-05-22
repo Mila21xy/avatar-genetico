@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avatar Evolucionario - Algoritmo Genético</title>
+    <script src="node_modules/phaser/dist/phaser.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        #game-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        #stats {
+            padding: 20px;
+            background: #f8f9fa;
+            border-top: 2px solid #667eea;
+            font-size: 14px;
+            color: #333;
+        }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            font-weight: 500;
+        }
+        
+        .stat-label {
+            color: #667eea;
+        }
+        
+        .stat-value {
+            font-weight: bold;
+            color: #764ba2;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="phaser-game"></div>
+        <div id="stats">
+            <div class="stat-row">
+                <span class="stat-label">Generación:</span>
+                <span class="stat-value" id="generation">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Mejor Fitness:</span>
+                <span class="stat-value" id="best-fitness">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Población:</span>
+                <span class="stat-value" id="population">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Promedio Fitness:</span>
+                <span class="stat-value" id="avg-fitness">0</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="src/game.js"></script>
+</body>
+</html>

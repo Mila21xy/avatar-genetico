@@ -1,0 +1,20 @@
+{
+  "name": "avatar-genetico",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "http-server",
+    "dev": "http-server --port 8080 -c-1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "phaser": "^4.1.0"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
