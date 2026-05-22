@@ -46,6 +46,9 @@ class MainScene extends Phaser.Scene {
         // Historia de fitness para mostrar progreso
         this.fitnessHistory = [];
 
+        // Inicializar UI de estadísticas
+        this.statsUI = new StatsUI();
+
         // Iniciar primera generación con DNA aleatorio
         this.startGeneration(null);
     }
@@ -165,12 +168,9 @@ class MainScene extends Phaser.Scene {
         // Guardar estadísticas de esta generación
         const stats = GeneticAlgorithm.getStats(this.individuals);
         this.fitnessHistory.push(stats.best);
-        console.log(
-            `Gen ${this.generation} | ` +
-            `Best: ${stats.best.toFixed(1)} | ` +
-            `Avg: ${stats.avg.toFixed(1)} | ` +
-            `Worst: ${stats.worst.toFixed(1)}`
-        );
+        // Registrar en gráfica y panel
+        this.statsUI.record(this.generation, stats);
+        console.log(`Gen ${this.generation} | Best: ${stats.best.toFixed(1)} | Avg: ${stats.avg.toFixed(1)}`);
 
         // Aplicar algoritmo genético → obtener nueva generación
         const nextGen = GeneticAlgorithm.nextGeneration(this.individuals);
@@ -235,9 +235,22 @@ class MainScene extends Phaser.Scene {
 
     // ── updateHTMLStats ─────────────────────────────────────────────
     updateHTMLStats(stats) {
-        document.getElementById('generation').textContent   = this.generation;
-        document.getElementById('best-fitness').textContent = stats.best.toFixed(1);
-        document.getElementById('population').textContent   = this.POPULATION_SIZE;
-        document.getElementById('avg-fitness').textContent  = stats.avg.toFixed(1);
+    const set = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    };
+
+    set('generation',    this.generation);
+    set('best-fitness',  stats.best.toFixed(1));
+    set('avg-fitness',   stats.avg.toFixed(1));
+    set('worst-fitness', stats.worst.toFixed(1));
+    set('population',    this.POPULATION_SIZE);
+
+    const bar = document.getElementById('fitness-bar');
+    if (bar) {
+        const pct = Math.min((stats.best / 150) * 100, 100).toFixed(0);
+        bar.style.width = pct + '%';
+        bar.textContent = pct + '%';
+    }
     }
 }

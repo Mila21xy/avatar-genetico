@@ -3,82 +3,214 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Avatar Evolucionario - Algoritmo Genético</title>
+    <title>Avatar Evolucionario — Algoritmos Genéticos</title>
     <script src="node_modules/phaser/dist/phaser.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            font-family: 'Arial', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #0a0a14;
+            color: #e0e0e0;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
+            padding: 20px;
             min-height: 100vh;
-            padding: 20px;
         }
-        
-        #game-container {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            overflow: hidden;
+
+        h1 {
+            font-size: 22px;
+            color: #ffd700;
+            letter-spacing: 2px;
+            margin-bottom: 14px;
+            text-transform: uppercase;
         }
-        
-        #stats {
-            padding: 20px;
-            background: #f8f9fa;
-            border-top: 2px solid #667eea;
-            font-size: 14px;
-            color: #333;
+
+        /* ── Layout principal ─────────────────── */
+        #main-layout {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
         }
-        
+
+        /* ── Canvas Phaser ────────────────────── */
+        #phaser-game canvas {
+            display: block;
+            border-radius: 8px;
+            box-shadow: 0 0 30px #ffd70033;
+        }
+
+        /* ── Panel derecho ────────────────────── */
+        #side-panel {
+            width: 220px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .card {
+            background: #111122;
+            border: 1px solid #2a2a4a;
+            border-radius: 8px;
+            padding: 14px;
+        }
+
+        .card h3 {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #888;
+            margin-bottom: 10px;
+        }
+
+        /* ── Estadísticas ─────────────────────── */
         .stat-row {
             display: flex;
             justify-content: space-between;
-            margin: 8px 0;
-            font-weight: 500;
+            align-items: center;
+            margin: 6px 0;
+            font-size: 13px;
         }
-        
-        .stat-label {
-            color: #667eea;
-        }
-        
+
+        .stat-label { color: #8888aa; }
+
         .stat-value {
             font-weight: bold;
-            color: #764ba2;
+            font-size: 15px;
+            color: #ffd700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* ── Barra de progreso ────────────────── */
+        #progress-track {
+            background: #1e1e3a;
+            border-radius: 4px;
+            height: 20px;
+            overflow: hidden;
+            margin-top: 6px;
+        }
+
+        #fitness-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #764ba2, #ffd700);
+            border-radius: 4px;
+            width: 0%;
+            transition: width 0.5s ease;
+            font-size: 11px;
+            line-height: 20px;
+            text-align: center;
+            color: #000;
+            font-weight: bold;
+        }
+
+        /* ── Gráfica ──────────────────────────── */
+        #fitness-chart {
+            width: 100%;
+            height: 120px;
+            border-radius: 4px;
+            display: block;
+        }
+
+        /* ── Leyenda de colores ───────────────── */
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #aaa;
+            margin: 3px 0;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
         }
     </style>
 </head>
 <body>
-    <div id="game-container">
+
+    <h1>🧬 Avatar Evolucionario — Algoritmos Genéticos</h1>
+
+    <div id="main-layout">
+
+        <!-- Canvas del juego -->
         <div id="phaser-game"></div>
-        <div id="stats">
-            <div class="stat-row">
-                <span class="stat-label">Generación:</span>
-                <span class="stat-value" id="generation">0</span>
+
+        <!-- Panel lateral derecho -->
+        <div id="side-panel">
+
+            <!-- Estadísticas -->
+            <div class="card">
+                <h3>📊 Estadísticas</h3>
+                <div class="stat-row">
+                    <span class="stat-label">Generación</span>
+                    <span class="stat-value" id="generation">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Mejor Fitness</span>
+                    <span class="stat-value" id="best-fitness">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Fitness Promedio</span>
+                    <span class="stat-value" id="avg-fitness">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Peor Fitness</span>
+                    <span class="stat-value" id="worst-fitness">0</span>
+                </div>
+                <div id="progress-track">
+                    <div id="fitness-bar">0%</div>
+                </div>
             </div>
-            <div class="stat-row">
-                <span class="stat-label">Mejor Fitness:</span>
-                <span class="stat-value" id="best-fitness">0</span>
+
+            <!-- Gráfica de evolución -->
+            <div class="card">
+                <h3>📈 Evolución del Fitness</h3>
+                <canvas id="fitness-chart" width="190" height="120"></canvas>
+                <div style="margin-top:6px">
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background:#ffd700"></div>
+                        Mejor fitness
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background:#4cc9f0"></div>
+                        Fitness promedio
+                    </div>
+                </div>
             </div>
-            <div class="stat-row">
-                <span class="stat-label">Población:</span>
-                <span class="stat-value" id="population">0</span>
+
+            <!-- Parámetros -->
+            <div class="card">
+                <h3>⚙️ Parámetros AG</h3>
+                <div class="stat-row">
+                    <span class="stat-label">Población</span>
+                    <span class="stat-value">30</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Mutación</span>
+                    <span class="stat-value">5%</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Selección</span>
+                    <span class="stat-value" style="font-size:11px;color:#aaa">Ruleta + Élite</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Crossover</span>
+                    <span class="stat-value" style="font-size:11px;color:#aaa">Punto medio</span>
+                </div>
             </div>
-            <div class="stat-row">
-                <span class="stat-label">Promedio Fitness:</span>
-                <span class="stat-value" id="avg-fitness">0</span>
-            </div>
+
         </div>
     </div>
+
+    <!-- Scripts: orden obligatorio -->
     <script src="src/genetics/Individual.js"></script>
     <script src="src/genetics/GeneticAlgorithm.js"></script>
+    <script src="src/ui/Stats.js"></script>
     <script src="src/scenes/MainScene.js"></script>
     <script src="src/game.js"></script>
+
 </body>
 </html>
