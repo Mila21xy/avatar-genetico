@@ -1,168 +1,243 @@
+/**
+ * MainScene.js
+ * Escena principal: mundo visual + algoritmo genético integrado.
+ *
+ * Flujo por generación:
+ *   1. create()  → inicializar mundo, crear 1ª generación aleatoria
+ *   2. update()  → cada frame: mover agentes según su DNA, medir fitness
+ *   3. endGeneration() → aplicar AG, crear nueva generación, reiniciar
+ */
+
 class MainScene extends Phaser.Scene {
     constructor() {
         super('MainScene');
     }
 
+    // ── preload ─────────────────────────────────────────────────────
     preload() {
-        // No necesitamos assets externos — todo con gráficos primitivos
+        // Sin assets externos: todo con primitivas de Phaser
     }
 
+    // ── create ──────────────────────────────────────────────────────
     create() {
-        // ─── VARIABLES GLOBALES ───────────────────────────────────────
-        this.generation    = 0;
-        this.populationSize = 30;
-        this.population    = [];
-        this.gameTime      = 0;
-        this.maxGameTime   = 6000; // 6 segundos por generación
+        // Parámetros de simulación
+        this.POPULATION_SIZE = 30;
+        this.MAX_TIME        = 7000; // ms por generación
 
-        // ─── FONDO ────────────────────────────────────────────────────
-        // Cielo degradado (rectángulos apilados simulando gradiente)
-        this.add.rectangle(500, 150, 1000, 300, 0x1a1a2e); // cielo oscuro
-        this.add.rectangle(500, 350, 1000, 150, 0x16213e); // horizonte
+        // Estado de la simulación
+        this.generation  = 0;
+        this.frameIndex  = 0;   // contador de frames dentro de la generación
+        this.gameTime    = 0;   // ms transcurridos en esta generación
+        this.individuals = [];  // array de Individual (genética)
 
-        // ─── SUELO ────────────────────────────────────────────────────
-        // El suelo es un objeto estático con física (no se mueve)
-        this.ground = this.physics.add.staticGroup();
+        // Construir mundo visual
+        this.buildBackground();
+        this.buildGround();
+        this.buildObstacles();
 
-        // Rectángulo visual del suelo
-        const groundRect = this.add.rectangle(500, 470, 1000, 30, 0x4a7c59);
-        this.physics.add.existing(groundRect, true); // true = estático
-        this.ground.add(groundRect);
-
-        // Línea decorativa encima del suelo
-        this.add.rectangle(500, 455, 1000, 4, 0x6abf69);
-
-        // ─── OBSTÁCULOS ───────────────────────────────────────────────
-        this.createObstacles();
-
-        // ─── POBLACIÓN ────────────────────────────────────────────────
-        this.initializePopulation();
-
-        // ─── HUD (texto en pantalla) ──────────────────────────────────
-        this.hudText = this.add.text(10, 10,
-            'Generación: 0 | Tiempo: 0s', {
-            fontSize: '15px',
+        // Crear HUD (texto encima de todo)
+        this.hudText = this.add.text(10, 10, '', {
+            fontSize: '14px',
             fill: '#ffffff',
-            backgroundColor: '#00000088',
-            padding: { x: 8, y: 4 }
-        }).setDepth(10); // setDepth asegura que quede encima de todo
+            backgroundColor: '#00000099',
+            padding: { x: 8, y: 5 }
+        }).setDepth(20);
+
+        // Historia de fitness para mostrar progreso
+        this.fitnessHistory = [];
+
+        // Iniciar primera generación con DNA aleatorio
+        this.startGeneration(null);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    update() {
-        this.gameTime += 16;
+    // ── update (cada frame ~16ms) ───────────────────────────────────
+    update(time, delta) {
+        this.gameTime  += delta;
+        this.frameIndex++;
 
-        // Actualizar cada agente vivo
-        this.population.forEach(agent => {
-            if (agent.alive) {
-                agent.fitness += 0.1; // Fitness básico por sobrevivir
+        let aliveCount = 0;
+
+        this.population.forEach((agent, i) => {
+            if (!agent.alive) return;
+            aliveCount++;
+
+            const individual = this.individuals[i];
+            const sprite     = agent.sprite;
+
+            // ── Movimiento horizontal constante ──
+            sprite.body.setVelocityX(160); // siempre corre hacia la derecha
+
+            // ── Decisión de saltar según DNA ──
+            const onGround = sprite.body.blocked.down; // ¿está tocando el suelo?
+            if (onGround && individual.shouldJump(this.frameIndex)) {
+                sprite.body.setVelocityY(-380); // impulso hacia arriba
+            }
+
+            // ── Fitness: cuánto avanzó hacia la derecha ──
+            individual.fitness = (sprite.x - 50) / 10; // normalizado
+
+            // ── Si sale del mundo por la derecha → éxito máximo ──
+            if (sprite.x > 980) {
+                individual.fitness += 100; // bonus por completar
+                agent.alive = false;
+                sprite.setFillStyle(0xffd700); // dorado = completó
             }
         });
 
         // Actualizar HUD
-        const seconds = Math.floor(this.gameTime / 1000);
+        const stats = GeneticAlgorithm.getStats(this.individuals);
         this.hudText.setText(
-            `Gen: ${this.generation} | T: ${seconds}s | Vivos: ${this.population.filter(a => a.alive).length}`
+            `Gen: ${this.generation}  |  ` +
+            `T: ${(this.gameTime / 1000).toFixed(1)}s  |  ` +
+            `Vivos: ${aliveCount}  |  ` +
+            `Best: ${stats.best.toFixed(1)}`
         );
+        this.updateHTMLStats(stats);
 
-        // Fin de generación
-        if (this.gameTime >= this.maxGameTime) {
+        // ── Fin de generación: tiempo agotado o todos muertos ──
+        if (this.gameTime >= this.MAX_TIME || aliveCount === 0) {
             this.endGeneration();
         }
-
-        // Actualizar panel HTML
-        this.updateStats();
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    createObstacles() {
-        this.obstacles = this.physics.add.staticGroup();
+    // ── startGeneration ─────────────────────────────────────────────
+    // individuals: array de Individual (null = primera generación aleatoria)
+    startGeneration(individuals) {
+        // Limpiar sprites de generación anterior
+        if (this.population) {
+            this.population.forEach(a => { if (a.sprite) a.sprite.destroy(); });
+        }
 
-        // Obstáculos: posición x, altura desde suelo, ancho, alto
-        const obstacleData = [
-            { x: 280, w: 25, h: 50 },   // primer salto (fácil)
-            { x: 500, w: 30, h: 70 },   // segundo salto (medio)
-            { x: 730, w: 35, h: 55 },   // tercer salto
-            { x: 880, w: 25, h: 90 },   // cuarto salto (difícil)
-        ];
+        this.population  = [];
+        this.gameTime    = 0;
+        this.frameIndex  = 0;
 
-        obstacleData.forEach(data => {
-            // El obstáculo se posa sobre el suelo
-            const yPos = 455 - (data.h / 2); // 455 = borde superior del suelo
-            const obs = this.add.rectangle(data.x, yPos, data.w, data.h, 0xe63946);
-            this.physics.add.existing(obs, true);
-            this.obstacles.add(obs);
+        // Crear individuos genéticos
+        if (individuals === null) {
+            // Primera generación: DNA aleatorio
+            this.individuals = Array.from(
+                { length: this.POPULATION_SIZE },
+                () => new Individual()
+            );
+        } else {
+            this.individuals = individuals;
+        }
 
-            // Borde decorativo (línea encima del obstáculo)
-            this.add.rectangle(data.x, yPos - (data.h / 2) - 2, data.w, 4, 0xff6b6b);
-        });
-    }
+        // Crear sprites para cada individuo
+        this.individuals.forEach((individual, i) => {
+            // Color según posición en la población (arco iris)
+            const hue   = (i / this.POPULATION_SIZE);
+            const color = Phaser.Display.Color.HSLToColor(hue, 0.85, 0.6).color;
 
-    // ─────────────────────────────────────────────────────────────────
-    initializePopulation() {
-        // Limpiar población anterior si existe
-        this.population.forEach(agent => {
-            if (agent.sprite) agent.sprite.destroy();
-        });
-        this.population = [];
-
-        for (let i = 0; i < this.populationSize; i++) {
-            // Colores diferentes para identificar agentes (HSL)
-            const hue = Math.floor((i / this.populationSize) * 360);
-            const color = Phaser.Display.Color.HSLToColor(hue / 360, 0.8, 0.6).color;
-
-            // Crear sprite del agente (rectángulo de 20x30)
-            // Todos empiezan en x=50, encima del suelo (y=440 = 455 - 15)
-            const sprite = this.add.rectangle(50, 440, 20, 30, color);
-            this.physics.add.existing(sprite); // dinámico (se mueve)
-
-            sprite.body.setBounce(0.0);
+            // Sprite: rectángulo de 20×30 px
+            const sprite = this.add.rectangle(50, 430, 20, 30, color);
+            this.physics.add.existing(sprite);
+            sprite.body.setBounce(0);
             sprite.body.setCollideWorldBounds(true);
-            sprite.body.setMaxVelocityY(400);
+            sprite.body.setMaxVelocityY(600);
+            sprite.body.setGravityY(200); // gravedad extra individual
 
-            // Colisión con suelo y obstáculos
+            // Colisión con suelo
             this.physics.add.collider(sprite, this.ground);
+
+            // Colisión con obstáculos → agente muere
             this.physics.add.collider(sprite, this.obstacles, () => {
-                // Al chocar con obstáculo → el agente muere
                 agent.alive = false;
-                sprite.setFillStyle(0x555555); // gris = muerto
+                sprite.setFillStyle(0x444444);      // gris = muerto
+                sprite.body.setVelocityX(0);
+                sprite.body.setVelocityY(-100);     // pequeño rebote visual
             });
 
             const agent = {
-                id: i,
-                sprite: sprite,
-                fitness: 0,
-                alive: true,
-                dna: null // se implementa en Fase 3
+                sprite,
+                alive: true
             };
 
-            // Guardar referencia cruzada para el callback de colisión
+            // Referencia para el callback de colisión
             sprite._agent = agent;
+
             this.population.push(agent);
+        });
+    }
+
+    // ── endGeneration ───────────────────────────────────────────────
+    endGeneration() {
+        // Guardar estadísticas de esta generación
+        const stats = GeneticAlgorithm.getStats(this.individuals);
+        this.fitnessHistory.push(stats.best);
+        console.log(
+            `Gen ${this.generation} | ` +
+            `Best: ${stats.best.toFixed(1)} | ` +
+            `Avg: ${stats.avg.toFixed(1)} | ` +
+            `Worst: ${stats.worst.toFixed(1)}`
+        );
+
+        // Aplicar algoritmo genético → obtener nueva generación
+        const nextGen = GeneticAlgorithm.nextGeneration(this.individuals);
+
+        // Avanzar generación
+        this.generation++;
+
+        // Iniciar siguiente generación con el nuevo DNA
+        this.startGeneration(nextGen);
+    }
+
+    // ── buildBackground ─────────────────────────────────────────────
+    buildBackground() {
+        // Capas de color simulando un cielo nocturno
+        this.add.rectangle(500, 125, 1000, 250, 0x0d0d1a);
+        this.add.rectangle(500, 325, 1000, 200, 0x111122);
+
+        // Estrellas (puntos blancos aleatorios)
+        for (let s = 0; s < 80; s++) {
+            const sx = Phaser.Math.Between(0, 1000);
+            const sy = Phaser.Math.Between(0, 300);
+            const sz = Phaser.Math.Between(1, 3);
+            this.add.circle(sx, sy, sz, 0xffffff, 0.6);
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    updateStats() {
-        if (this.population.length === 0) return;
+    // ── buildGround ─────────────────────────────────────────────────
+    buildGround() {
+        this.ground = this.physics.add.staticGroup();
 
-        const fitnesses  = this.population.map(a => a.fitness);
-        const bestFit    = Math.max(...fitnesses);
-        const avgFit     = fitnesses.reduce((s, f) => s + f, 0) / fitnesses.length;
+        // Suelo principal
+        const g = this.add.rectangle(500, 472, 1000, 28, 0x3d6b4f);
+        this.physics.add.existing(g, true);
+        this.ground.add(g);
 
-        document.getElementById('generation').textContent  = this.generation;
-        document.getElementById('best-fitness').textContent = bestFit.toFixed(1);
-        document.getElementById('population').textContent  = this.population.length;
-        document.getElementById('avg-fitness').textContent = avgFit.toFixed(1);
+        // Franja decorativa
+        this.add.rectangle(500, 457, 1000, 5, 0x5a9e70);
     }
 
-    // ─────────────────────────────────────────────────────────────────
-    endGeneration() {
-        console.log(`--- Generación ${this.generation} terminada ---`);
-        console.log(`Mejor fitness: ${Math.max(...this.population.map(a => a.fitness)).toFixed(1)}`);
+    // ── buildObstacles ──────────────────────────────────────────────
+    buildObstacles() {
+        this.obstacles = this.physics.add.staticGroup();
 
-        this.generation++;
-        this.gameTime = 0;
-        this.initializePopulation();
+        // [x, ancho, altura] — sobre el suelo (y = 457 - h/2)
+        const defs = [
+            [260,  22, 45],
+            [460,  28, 65],
+            [660,  22, 50],
+            [840,  32, 80],
+        ];
+
+        defs.forEach(([x, w, h]) => {
+            const y   = 458 - h / 2;
+            const obs = this.add.rectangle(x, y, w, h, 0xc1121f);
+            this.physics.add.existing(obs, true);
+            this.obstacles.add(obs);
+
+            // Brillo encima del obstáculo
+            this.add.rectangle(x, y - h / 2 - 3, w, 5, 0xff4d6d);
+        });
+    }
+
+    // ── updateHTMLStats ─────────────────────────────────────────────
+    updateHTMLStats(stats) {
+        document.getElementById('generation').textContent   = this.generation;
+        document.getElementById('best-fitness').textContent = stats.best.toFixed(1);
+        document.getElementById('population').textContent   = this.POPULATION_SIZE;
+        document.getElementById('avg-fitness').textContent  = stats.avg.toFixed(1);
     }
 }
